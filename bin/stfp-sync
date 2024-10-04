@@ -1,0 +1,72 @@
+#!/bin/bash
+
+CONFIG_FILE=~/.sftp-sync-config.yml
+MAPPINGS_FILE=~/.sftp-sync-mappings
+
+# Function to select a server
+select_server() {
+    echo "Select a server:"
+    servers=($(yq e '.servers | keys | .[]' $CONFIG_FILE))
+    select server in "${servers[@]}"; do
+        if [ -n "$server" ]; then
+            echo $server
+            return
+        fi
+    done
+}
+
+# Function to push files
+push() {
+    local_dir=$(pwd)
+    
+    # Check if this directory has been pushed before
+    mapping=$(grep "^$local_dir:" $MAPPINGS_FILE)
+    
+    if [ -z "$mapping" ]; then
+        server=$(select_server)
+        echo "Select a remote directory:"
+        remote_base_dir=$(yq e ".servers.$server.remote_base_dir" $CONFIG_FILE)
+        ssh_command="ssh $(yq e ".servers.$server.user" $CONFIG_FILE)@$(yq e ".servers.$server.ip" $CONFIG_FILE) -p $(yq e ".servers.$server.port" $CONFIG_FILE)"
+        $ssh_command "ls -d $remote_base_dir/*/"
+        read -p "Enter the name of the remote directory: " remote_dir
+        echo "$local_dir:$server:$remote_dir" >> $MAPPINGS_FILE
+    else
+        server=$(echo $mapping | cut -d: -f2)
+        remote_dir=$(echo $mapping | cut -d: -f3)
+        echo "Using previously mapped server ($server) and remote directory ($remote_dir)"
+    fi
+
+    # Perform the sync
+    remote_base_dir=$(yq e ".servers.$server.remote_base_dir" $CONFIG_FILE)
+    rsync -avz -e "ssh -p $(yq e ".servers.$server.port" $CONFIG_FILE)" "$local_dir/" "$(yq e ".servers.$server.user" $CONFIG_FILE)@$(yq e ".servers.$server.ip" $CONFIG_FILE):$remote_base_dir/$remote_dir/"
+}
+
+# Function to list mappings
+list_mappings() {
+    echo "Current directory mappings:"
+    cat $MAPPINGS_FILE
+}
+
+# Function to remove a mapping
+remove_mapping() {
+    local_dir=$(pwd)
+    sed -i '' "\|^$local_dir:|d" $MAPPINGS_FILE
+    echo "Mapping for current directory removed."
+}
+
+# Main script
+case "$1" in
+    push)
+        push
+        ;;
+    list)
+        list_mappings
+        ;;
+    remove)
+        remove_mapping
+        ;;
+    *)
+        echo "Usage: sftp-sync [push|list|remove]"
+        exit 1
+        ;;
+esac

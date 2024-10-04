@@ -1,0 +1,11 @@
+servers:
+  server1:
+    ip: your.server1.ip
+    user: your_username1
+    port: 22
+    remote_base_dir: /path/on/server1
+  server2:
+    ip: your.server2.ip
+    user: your_username2
+    port: 22
+    remote_base_dir: /path/on/server2
